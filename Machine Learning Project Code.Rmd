@@ -1,0 +1,92 @@
+## Machine Learning Project - Coursera##
+
+#1. Read in the files specified
+
+trainf <-tempfile()
+trainUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+download.file(trainUrl,trainf)
+
+testf <-tempfile()
+testUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+download.file(testUrl,testf)
+
+traind <-read.csv(trainf, na.strings = c("NA","#DIV/0!", " "), header = TRUE)
+testd <-read.csv(testf, na.strings = c("NA","#DIV/0!", " "), header = TRUE)
+
+#Find NAs per column
+
+sumna <-apply(traind, 2, function(x) length(which(is.na(x)))/length(x))
+##Look at values
+
+unique(sumna)
+
+##Conclusion that columns that contain NAs do so in more than 90% of the rows.
+##Remove these
+
+reducetrain <-traind[,(sumna <0.9)]
+
+##Now we have reduced to 60 variables - cool.
+
+##Round 2 let's look at removing zero covariates.
+
+nsv <- nearZeroVar(reducetrain,saveMetrics=TRUE)
+
+##Based on this, we can discard the new_window metric
+
+reducetrain <-reducetrain[,nsv$nzv==FALSE]
+
+##Last pass - look at extraneous columns based on the metadata.
+
+## The following are not relevant:
+
+#$X                   
+#$user_name           
+#$raw_timestamp_part_1
+#$raw_timestamp_part_2
+#$cvtd_timestamp
+#$num_window
+
+reducetrain$X <-NULL
+reducetrain$user_name <-NULL
+reducetrain$raw_timestamp_part_1 <-NULL
+reducetrain$raw_timestamp_part_2 <-NULL
+reducetrain$cvtd_timestamp <- NULL
+reducetrain$num_window <-NULL
+
+# Partition data 60 40
+set.seed(1969)
+inTrain <-createDataPartition(y=reducetrain$classe, p=0.6, list=FALSE)
+train_tr <- reducetrain[inTrain,]
+train_ts <-reducetrain[-inTrain,]
+
+
+## let's build models
+
+traingbm <- train(classe ~., method="gbm", data = train_tr)
+trainrf <- train(classe ~., method="rf", data = train_tr)
+trainlda <- train(classe ~., method="lda", data = train_tr)
+trainsvc <- train(classe ~., method ="svmLinear", data= train_tr)
+
+# Predict values based on the testing partition
+
+pgbm <- predict(traingbm, train_ts)
+prf <- predict(trainrf, train_ts)
+plda <- predict(trainlda, train_ts)
+psvc <- predict(trainsvc, train_ts)
+
+#Get confusion matrices
+
+confusionMatrix(train_ts$classes, pgbm)
+confusionMatrix(train_ts$classes, plda)
+confusionMatrix(train_ts$classes, psvc)
+accuracy_rf <- confusionMatrix(train_ts$classes, prf)
+accuracy_rf
+
+#use resampling to check the results.
+
+resamps <- resamples(list(GBM =  traingbm, SVM = trainsvc, RF = trainrf, LDA = trainlda))
+summary(resamps)
+
+#Plot accuracy of resampled data based on each model
+
+bwplot(resamps)
